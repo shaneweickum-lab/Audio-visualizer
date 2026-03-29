@@ -60,6 +60,7 @@
   const totalTimeEl   = document.getElementById('totalTime');
 
   const recordBtn          = document.getElementById('recordBtn');
+  const fabExport          = document.getElementById('fabExport');
   const recordStatus       = document.getElementById('recordStatus');
   const videoQualitySelect = document.getElementById('videoQuality');
   const videoFormatSelect  = document.getElementById('videoFormat');
@@ -385,8 +386,25 @@
     const ready = !!audioBuffer;
     playPauseBtn.disabled = !ready;
     recordBtn.disabled    = !ready;
+    fabExport.disabled    = !ready;
     if (ready) canvasOverlay.style.display = 'none';
   }
+
+  // ── FAB taps: navigate to export tab then trigger ──────────────
+  fabExport.addEventListener('click', () => {
+    // On mobile, switch to export tab so user can see quality options.
+    // If already on export tab (or they tap again quickly), just record.
+    const isMobile = window.matchMedia('(max-width: 640px)').matches;
+    if (isMobile) {
+      const exportTab = document.querySelector('.tab-btn[data-tab="export"]');
+      const alreadyOnExport = exportTab && exportTab.classList.contains('active');
+      if (!alreadyOnExport) {
+        setActiveTab('export');
+        return; // let user see settings first; they tap FAB again to record
+      }
+    }
+    recordBtn.click();
+  });
 
   // ── Recording / export ─────────────────────────────────────────
   recordBtn.addEventListener('click', async () => {
@@ -399,7 +417,9 @@
     const overlay = createDownloadOverlay();
     document.body.appendChild(overlay);
     recordBtn.disabled = true;
+    fabExport.disabled = true;
     recordBtn.classList.add('recording');
+    fabExport.classList.add('recording');
     recordStatus.style.display = 'none';
 
     try {
@@ -441,7 +461,9 @@
     } finally {
       document.body.removeChild(overlay);
       recordBtn.disabled = false;
+      fabExport.disabled = !audioBuffer;
       recordBtn.classList.remove('recording');
+      fabExport.classList.remove('recording');
       resizeCanvas();
       drawIdleFrame();
     }

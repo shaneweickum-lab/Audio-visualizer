@@ -115,6 +115,10 @@
               <svg viewBox="0 0 40 30"><defs><linearGradient id="sg" x1="0" y1="0" x2="1" y2="0"><stop offset="0%" stop-color="#f00"/><stop offset="50%" stop-color="#0f0"/><stop offset="100%" stop-color="#00f"/></linearGradient></defs><rect x="2" y="5" width="36" height="20" rx="2" fill="url(#sg)" opacity="0.6"/><polyline points="2,20 8,15 14,8 20,12 26,7 32,16 38,10" fill="none" stroke="white" stroke-width="1.5"/></svg>
               <span>Spectrum</span>
             </button>
+            <button class="viz-btn" data-viz="glow3d" title="Glow 3D">
+              <svg viewBox="0 0 40 32"><defs><linearGradient id="g3" x1="0" y1="1" x2="1" y2="0"><stop offset="0%" stop-color="#ff6b35"/><stop offset="50%" stop-color="#c044ff"/><stop offset="100%" stop-color="#00d4ff"/></linearGradient></defs><rect x="1" y="20" width="4" height="10" rx="1" fill="url(#g3)" opacity="0.8"/><rect x="7" y="14" width="4" height="16" rx="1" fill="url(#g3)"/><rect x="13" y="7" width="4" height="23" rx="1" fill="url(#g3)"/><rect x="19" y="4" width="4" height="26" rx="1" fill="url(#g3)"/><rect x="25" y="9" width="4" height="21" rx="1" fill="url(#g3)"/><rect x="31" y="17" width="4" height="13" rx="1" fill="url(#g3)" opacity="0.8"/><rect x="37" y="22" width="3" height="8" rx="1" fill="url(#g3)" opacity="0.6"/></svg>
+              <span>Glow 3D</span>
+            </button>
           </div>
 
           <h2 style="margin-top:16px;">Color Scheme</h2>
@@ -124,6 +128,7 @@
             <button class="color-btn" data-color="ocean"><span class="color-swatch" style="background:linear-gradient(135deg,#00b4d8,#0077b6)"></span>Ocean</button>
             <button class="color-btn" data-color="aurora"><span class="color-swatch" style="background:linear-gradient(135deg,#43e97b,#38f9d7)"></span>Aurora</button>
             <button class="color-btn" data-color="white"><span class="color-swatch" style="background:rgba(255,255,255,0.9)"></span>White</button>
+            <button class="color-btn" data-color="sunset"><span class="color-swatch" style="background:linear-gradient(135deg,#ff6b35,#c044ff,#00d4ff)"></span>Sunset</button>
             <button class="color-btn" data-color="rainbow"><span class="color-swatch" style="background:linear-gradient(135deg,#f00,#ff0,#0f0,#0ff,#00f,#f0f)"></span>Rainbow</button>
           </div>
         </section>
@@ -190,6 +195,14 @@
 
       </aside>
     </main>
+
+    <!-- Floating export button — always visible on mobile canvas view -->
+    <button class="fab-export" id="fabExport" disabled aria-label="Export video">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2">
+        <circle cx="12" cy="12" r="10"/>
+        <circle cx="12" cy="12" r="3.5" fill="currentColor" stroke="none"/>
+      </svg>
+    </button>
 
     <!-- Mobile tab bar (hidden on desktop via CSS) -->
     <nav class="mobile-tab-bar" id="mobileTabBar">

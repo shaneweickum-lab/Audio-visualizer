@@ -1,338 +1,624 @@
 /**
- * visualizers.js
- * Each visualizer is a function(ctx, dataArray, bufferLength, canvas, options)
- * options: { colorScheme, sensitivity, bgImage, bgOpacity }
+ * visualizers.js — elegant audio visualizers
+ * Each exported fn: (ctx, dataArray, bufferLength, canvas, opts)
+ * opts: { colorScheme, sensitivity, bgImage, bgOpacity }
  */
 
+// ── Color schemes ──────────────────────────────────────────────
 const COLOR_SCHEMES = {
-  neon: (i, total, amplitude) => {
-    const hue = (i / total) * 240 + 180;
-    return `hsl(${hue}, 100%, ${40 + amplitude * 30}%)`;
+  neon: (i, total, amp) => {
+    const hue = 200 + (i / total) * 140;
+    return `hsl(${hue}, 100%, ${45 + amp * 30}%)`;
   },
-  fire: (i, total, amplitude) => {
-    const hue = amplitude * 60; // 0=red → 60=yellow
-    return `hsl(${hue}, 100%, ${35 + amplitude * 35}%)`;
+  fire: (i, total, amp) => {
+    const hue = (i / total) * 55;
+    return `hsl(${hue}, 100%, ${35 + amp * 40}%)`;
   },
-  ocean: (i, total, amplitude) => {
-    const hue = 180 + (i / total) * 60;
-    return `hsl(${hue}, 90%, ${30 + amplitude * 40}%)`;
+  ocean: (i, total, amp) => {
+    const hue = 185 + (i / total) * 55;
+    return `hsl(${hue}, 90%, ${30 + amp * 42}%)`;
   },
-  aurora: (i, total, amplitude) => {
-    const hue = (i / total) * 120 + 100;
-    return `hsl(${hue}, 80%, ${30 + amplitude * 45}%)`;
+  aurora: (i, total, amp) => {
+    const hue = 100 + (i / total) * 130;
+    return `hsl(${hue}, 85%, ${30 + amp * 45}%)`;
   },
-  white: () => `rgba(255,255,255,0.9)`,
-  rainbow: (i, total) => {
-    const hue = (i / total) * 360;
-    return `hsl(${hue}, 100%, 60%)`;
+  sunset: (i, total, amp) => {
+    // warm orange → magenta → cool blue
+    const hue = 30 - (i / total) * 210;
+    return `hsl(${((hue % 360) + 360) % 360}, 100%, ${38 + amp * 36}%)`;
   },
+  white: (i, total, amp) => `rgba(255,255,255,${0.6 + amp * 0.4})`,
+  rainbow: (i, total) => `hsl(${(i / total) * 360}, 100%, 60%)`,
 };
 
-function getColor(scheme, i, total, amplitude) {
-  const fn = COLOR_SCHEMES[scheme] || COLOR_SCHEMES.neon;
-  return fn(i, total, amplitude);
+function getColor(scheme, i, total, amp) {
+  return (COLOR_SCHEMES[scheme] || COLOR_SCHEMES.neon)(i, total, amp);
 }
 
+// Slightly dimmer version for base/reflection gradient stops
+function getDimColor(scheme, i, total) {
+  return (COLOR_SCHEMES[scheme] || COLOR_SCHEMES.neon)(i, total, 0.05);
+}
+
+// ── Background ─────────────────────────────────────────────────
 function drawBackground(ctx, canvas, bgImage, bgOpacity) {
   ctx.clearRect(0, 0, canvas.width, canvas.height);
-  ctx.fillStyle = '#0a0c12';
+  ctx.fillStyle = '#080a10';
   ctx.fillRect(0, 0, canvas.width, canvas.height);
+
   if (bgImage) {
     ctx.globalAlpha = bgOpacity / 100;
     const scale = Math.max(canvas.width / bgImage.width, canvas.height / bgImage.height);
-    const w = bgImage.width * scale;
-    const h = bgImage.height * scale;
-    const x = (canvas.width - w) / 2;
-    const y = (canvas.height - h) / 2;
-    ctx.drawImage(bgImage, x, y, w, h);
+    const w = bgImage.width * scale, h = bgImage.height * scale;
+    ctx.drawImage(bgImage, (canvas.width - w) / 2, (canvas.height - h) / 2, w, h);
     ctx.globalAlpha = 1;
-    // Subtle dark vignette
-    const grad = ctx.createRadialGradient(
-      canvas.width / 2, canvas.height / 2, canvas.width * 0.2,
-      canvas.width / 2, canvas.height / 2, canvas.width * 0.8
-    );
-    grad.addColorStop(0, 'rgba(0,0,0,0)');
-    grad.addColorStop(1, 'rgba(0,0,0,0.55)');
-    ctx.fillStyle = grad;
-    ctx.fillRect(0, 0, canvas.width, canvas.height);
+  }
+
+  // Vignette — always applied to darken edges
+  const vig = ctx.createRadialGradient(
+    canvas.width / 2, canvas.height / 2, canvas.width * 0.15,
+    canvas.width / 2, canvas.height / 2, canvas.width * 0.85
+  );
+  vig.addColorStop(0, 'rgba(0,0,0,0)');
+  vig.addColorStop(1, 'rgba(0,0,0,0.72)');
+  ctx.fillStyle = vig;
+  ctx.fillRect(0, 0, canvas.width, canvas.height);
+}
+
+// ── Shared helpers ─────────────────────────────────────────────
+
+// Gaussian bell curve: returns 0→1 based on position along [0,total]
+function gaussian(i, total, sigma = 0.28) {
+  const x = (i / (total - 1)) - 0.5;
+  return Math.exp(-(x * x) / (2 * sigma * sigma));
+}
+
+// Smoothed catmull-rom path for waveforms
+function smoothPath(ctx, points) {
+  if (points.length < 2) return;
+  ctx.moveTo(points[0].x, points[0].y);
+  for (let i = 0; i < points.length - 1; i++) {
+    const mx = (points[i].x + points[i + 1].x) / 2;
+    ctx.bezierCurveTo(mx, points[i].y, mx, points[i + 1].y, points[i + 1].x, points[i + 1].y);
   }
 }
 
-// ── 1. Bars ────────────────────────────────────────────────────
+// Falling-peak tracker
+const _peaks = {};
+function trackPeak(key, barH, decay = 0.965) {
+  const prev = _peaks[key] || 0;
+  _peaks[key] = barH > prev ? barH : prev * decay;
+  return _peaks[key];
+}
+
+// Floor-reflection gradient helper
+function reflectionGrad(ctx, x, baseY, barW, barH, color) {
+  const g = ctx.createLinearGradient(x, baseY, x, baseY + barH * 0.45);
+  g.addColorStop(0, color.replace(/[\d.]+\)$/, '0.28)').replace(/hsl\(/, 'hsla(').replace(/\)$/, ',0.28)'));
+  g.addColorStop(1, 'rgba(0,0,0,0)');
+  return g;
+}
+
+// ══════════════════════════════════════════════════════════════
+// 1. ELEGANT BARS — gaussian envelope, gradient fill, glow, peaks
+// ══════════════════════════════════════════════════════════════
 function drawBars(ctx, dataArray, bufferLength, canvas, opts) {
   const { colorScheme, sensitivity, bgImage, bgOpacity } = opts;
   drawBackground(ctx, canvas, bgImage, bgOpacity);
 
-  const usable = Math.floor(bufferLength * 0.6);
-  const barWidth = (canvas.width / usable) * 0.8;
-  const gap = (canvas.width / usable) * 0.2;
-  const baseY = canvas.height * 0.85;
-  const maxH = canvas.height * 0.75;
+  const usable  = Math.floor(bufferLength * 0.55);
+  const totalW  = canvas.width * 0.76;
+  const startX  = (canvas.width - totalW) / 2;
+  const slot    = totalW / usable;
+  const barW    = slot * 0.72;
+  const gap     = slot * 0.28;
+  const baseY   = canvas.height * 0.80;
+  const maxH    = canvas.height * 0.70;
 
   for (let i = 0; i < usable; i++) {
-    const amplitude = (dataArray[i] / 255) * (sensitivity / 100);
-    const barH = amplitude * maxH;
-    const x = i * (barWidth + gap) + gap / 2;
+    const env     = gaussian(i, usable, 0.30);
+    const rawAmp  = Math.min((dataArray[i] / 255) * (sensitivity / 100), 1);
+    const amp     = rawAmp * (0.35 + env * 0.65);  // envelope lifts center bars
+    const barH    = amp * maxH;
+    const x       = startX + i * slot;
+    const color   = getColor(colorScheme, i, usable, rawAmp);
 
-    ctx.fillStyle = getColor(colorScheme, i, usable, amplitude);
+    if (barH < 1) continue;
 
-    // Rounded top via arc
-    const radius = Math.min(barWidth / 2, barH / 2, 6);
-    if (barH > 0) {
-      ctx.beginPath();
-      ctx.moveTo(x, baseY);
-      ctx.lineTo(x, baseY - barH + radius);
-      ctx.quadraticCurveTo(x, baseY - barH, x + radius, baseY - barH);
-      ctx.lineTo(x + barWidth - radius, baseY - barH);
-      ctx.quadraticCurveTo(x + barWidth, baseY - barH, x + barWidth, baseY - barH + radius);
-      ctx.lineTo(x + barWidth, baseY);
-      ctx.closePath();
-      ctx.fill();
+    // ── Main bar with vertical gradient ──
+    const grad = ctx.createLinearGradient(x, baseY - barH, x, baseY);
+    grad.addColorStop(0, color);
+    grad.addColorStop(0.6, color.replace(/[\d.]+%\)/, v => `${Math.max(parseFloat(v) - 18, 10)}%)`));
+    grad.addColorStop(1, 'rgba(0,0,0,0.05)');
+
+    ctx.shadowColor = color;
+    ctx.shadowBlur  = 10 + amp * 22;
+    ctx.fillStyle   = grad;
+
+    const r = Math.min(barW / 2, 3);
+    ctx.beginPath();
+    ctx.moveTo(x, baseY);
+    ctx.lineTo(x, baseY - barH + r);
+    ctx.arcTo(x, baseY - barH, x + r, baseY - barH, r);
+    ctx.lineTo(x + barW - r, baseY - barH);
+    ctx.arcTo(x + barW, baseY - barH, x + barW, baseY - barH + r, r);
+    ctx.lineTo(x + barW, baseY);
+    ctx.closePath();
+    ctx.fill();
+
+    // ── Peak marker ──
+    const peakH = trackPeak(`bars_${i}`, barH);
+    if (peakH > 4) {
+      ctx.shadowBlur  = 6;
+      ctx.fillStyle   = color;
+      ctx.globalAlpha = 0.9;
+      ctx.fillRect(x, baseY - peakH - 1, barW, 2);
+      ctx.globalAlpha = 1;
     }
 
-    // Glow reflection
-    ctx.globalAlpha = 0.2;
-    ctx.fillStyle = getColor(colorScheme, i, usable, amplitude);
-    ctx.fillRect(x, baseY, barWidth, barH * 0.2);
+    // ── Floor reflection ──
+    ctx.shadowBlur  = 0;
+    ctx.globalAlpha = 0.22 * amp;
+    ctx.fillStyle   = color;
+    ctx.save();
+    ctx.translate(x + barW / 2, baseY);
+    ctx.scale(1, -0.4);
+    ctx.translate(-(x + barW / 2), -baseY);
+    ctx.fillRect(x, baseY - barH, barW, barH);
+    ctx.restore();
     ctx.globalAlpha = 1;
   }
+
+  ctx.shadowBlur = 0;
 }
 
-// ── 2. Waveform ────────────────────────────────────────────────
+// ══════════════════════════════════════════════════════════════
+// 2. WAVEFORM — smooth bezier, filled glow area, dual line
+// ══════════════════════════════════════════════════════════════
 function drawWaveform(ctx, dataArray, bufferLength, canvas, opts) {
   const { colorScheme, sensitivity, bgImage, bgOpacity } = opts;
   drawBackground(ctx, canvas, bgImage, bgOpacity);
 
-  const sliceWidth = canvas.width / bufferLength;
-  const midY = canvas.height / 2;
-  const amp = canvas.height * 0.4 * (sensitivity / 100);
+  const margin  = canvas.width * 0.08;
+  const drawW   = canvas.width - margin * 2;
+  const midY    = canvas.height * 0.50;
+  const amp     = canvas.height * 0.38 * (sensitivity / 100);
+  const step    = Math.max(1, Math.floor(bufferLength / 180));
+  const pts     = [];
 
-  // Glow effect
-  ctx.shadowColor = getColor(colorScheme, 0, 1, 0.8);
-  ctx.shadowBlur = 12;
+  for (let i = 0; i < bufferLength; i += step) {
+    const v = (dataArray[i] / 128) - 1;
+    pts.push({ x: margin + (i / bufferLength) * drawW, y: midY + v * amp });
+  }
+
+  if (pts.length < 2) return;
+
+  // ── Filled glow area beneath ──
+  const fillGrad = ctx.createLinearGradient(0, midY - amp, 0, midY + amp * 0.8);
+  fillGrad.addColorStop(0, getColor(colorScheme, 3, 6, 0.9).replace(/hsl/, 'hsla').replace(/\)$/, ',0.28)'));
+  fillGrad.addColorStop(1, 'rgba(0,0,0,0)');
 
   ctx.beginPath();
-  ctx.lineWidth = 2.5;
-  const grad = ctx.createLinearGradient(0, 0, canvas.width, 0);
-  grad.addColorStop(0, getColor(colorScheme, 0, 10, 0.8));
-  grad.addColorStop(0.5, getColor(colorScheme, 5, 10, 1));
-  grad.addColorStop(1, getColor(colorScheme, 9, 10, 0.8));
-  ctx.strokeStyle = grad;
+  smoothPath(ctx, pts);
+  ctx.lineTo(pts[pts.length - 1].x, midY);
+  ctx.lineTo(pts[0].x, midY);
+  ctx.closePath();
+  ctx.fillStyle = fillGrad;
+  ctx.fill();
 
-  for (let i = 0; i < bufferLength; i++) {
-    const v = (dataArray[i] / 128) - 1;
-    const y = midY + v * amp;
-    const x = i * sliceWidth;
-    i === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y);
+  // ── Main glow line ──
+  const lineGrad = ctx.createLinearGradient(margin, 0, margin + drawW, 0);
+  for (let s = 0; s <= 6; s++) {
+    lineGrad.addColorStop(s / 6, getColor(colorScheme, s, 6, 0.9));
   }
-  ctx.stroke();
-  ctx.shadowBlur = 0;
-
-  // Mirror line below
   ctx.beginPath();
-  ctx.lineWidth = 1;
-  ctx.globalAlpha = 0.3;
-  for (let i = 0; i < bufferLength; i++) {
-    const v = (dataArray[i] / 128) - 1;
-    const y = midY - v * amp * 0.5 + amp * 0.6;
-    const x = i * sliceWidth;
-    i === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y);
-  }
+  smoothPath(ctx, pts);
+  ctx.strokeStyle = lineGrad;
+  ctx.lineWidth   = 2.5;
+  ctx.shadowColor = getColor(colorScheme, 3, 6, 1);
+  ctx.shadowBlur  = 16;
+  ctx.lineJoin    = 'round';
   ctx.stroke();
+
+  // ── Thin secondary line (echo) ──
+  ctx.globalAlpha = 0.35;
+  ctx.lineWidth   = 1;
+  ctx.shadowBlur  = 0;
+  const echo = pts.map(p => ({ x: p.x, y: midY + (p.y - midY) * 0.5 + canvas.height * 0.18 }));
+  ctx.beginPath();
+  smoothPath(ctx, echo);
+  ctx.stroke();
+
   ctx.globalAlpha = 1;
+  ctx.shadowBlur  = 0;
 }
 
-// ── 3. Circular ────────────────────────────────────────────────
+// ══════════════════════════════════════════════════════════════
+// 3. CIRCULAR — double ring, inner pulse, glow spikes
+// ══════════════════════════════════════════════════════════════
 function drawCircular(ctx, dataArray, bufferLength, canvas, opts) {
   const { colorScheme, sensitivity, bgImage, bgOpacity } = opts;
   drawBackground(ctx, canvas, bgImage, bgOpacity);
 
-  const cx = canvas.width / 2;
-  const cy = canvas.height / 2;
-  const minDim = Math.min(canvas.width, canvas.height);
-  const innerR = minDim * 0.18;
-  const maxSpike = minDim * 0.28;
-  const usable = Math.min(bufferLength, 256);
+  const cx      = canvas.width / 2;
+  const cy      = canvas.height / 2;
+  const minDim  = Math.min(canvas.width, canvas.height);
+  const innerR  = minDim * 0.17;
+  const maxSpike = minDim * 0.30;
+  const usable  = Math.min(bufferLength, 200);
+  const avgAmp  = dataArray.slice(0, usable).reduce((s, v) => s + v, 0) / usable / 255;
 
+  // Inner glow circle
+  const igr = ctx.createRadialGradient(cx, cy, 0, cx, cy, innerR * 0.9);
+  const innerColor = getColor(colorScheme, Math.floor(usable / 2), usable, avgAmp);
+  igr.addColorStop(0, innerColor.replace(/hsl/, 'hsla').replace(/\)$/, `,${0.2 + avgAmp * 0.35})`));
+  igr.addColorStop(1, 'rgba(0,0,0,0)');
+  ctx.fillStyle = igr;
+  ctx.beginPath();
+  ctx.arc(cx, cy, innerR * 0.9, 0, Math.PI * 2);
+  ctx.fill();
+
+  // Spikes
   for (let i = 0; i < usable; i++) {
-    const amplitude = (dataArray[i] / 255) * (sensitivity / 100);
-    const angle = (i / usable) * Math.PI * 2 - Math.PI / 2;
-    const spikeLen = amplitude * maxSpike;
+    const amp    = Math.min((dataArray[i] / 255) * (sensitivity / 100), 1);
+    const angle  = (i / usable) * Math.PI * 2 - Math.PI / 2;
+    const spike  = amp * maxSpike;
+    const color  = getColor(colorScheme, i, usable, amp);
 
     const x1 = cx + Math.cos(angle) * innerR;
     const y1 = cy + Math.sin(angle) * innerR;
-    const x2 = cx + Math.cos(angle) * (innerR + spikeLen);
-    const y2 = cy + Math.sin(angle) * (innerR + spikeLen);
+    const x2 = cx + Math.cos(angle) * (innerR + spike);
+    const y2 = cy + Math.sin(angle) * (innerR + spike);
 
-    ctx.strokeStyle = getColor(colorScheme, i, usable, amplitude);
-    ctx.lineWidth = 2;
-    ctx.shadowColor = ctx.strokeStyle;
-    ctx.shadowBlur = 6;
+    ctx.strokeStyle = color;
+    ctx.lineWidth   = 1.8 + amp * 1.4;
+    ctx.shadowColor = color;
+    ctx.shadowBlur  = 8 + amp * 16;
+    ctx.lineCap     = 'round';
     ctx.beginPath();
     ctx.moveTo(x1, y1);
     ctx.lineTo(x2, y2);
     ctx.stroke();
   }
-  ctx.shadowBlur = 0;
 
-  // Inner circle
+  // Outer ring
+  ctx.shadowBlur  = 4;
+  ctx.strokeStyle = getColor(colorScheme, 0, 1, 0.5);
+  ctx.lineWidth   = 1;
   ctx.beginPath();
   ctx.arc(cx, cy, innerR, 0, Math.PI * 2);
-  ctx.strokeStyle = getColor(colorScheme, 0, 1, 0.6);
-  ctx.lineWidth = 1.5;
   ctx.stroke();
+
+  // Inner ring
+  ctx.strokeStyle = getColor(colorScheme, Math.floor(usable * 0.7), usable, avgAmp * 0.6);
+  ctx.lineWidth   = 0.5;
+  ctx.globalAlpha = 0.4;
+  ctx.beginPath();
+  ctx.arc(cx, cy, innerR * 0.6, 0, Math.PI * 2);
+  ctx.stroke();
+
+  ctx.globalAlpha = 1;
+  ctx.shadowBlur  = 0;
 }
 
-// ── 4. Particles ───────────────────────────────────────────────
-const particlePool = [];
-let lastParticleTime = 0;
-
-function spawnParticles(dataArray, bufferLength, canvas, opts) {
-  const avgAmplitude = dataArray.reduce((a, b) => a + b, 0) / bufferLength / 255;
-  const count = Math.floor(avgAmplitude * opts.sensitivity / 100 * 4);
-
-  for (let i = 0; i < count; i++) {
-    if (particlePool.length > 600) break;
-    const angle = Math.random() * Math.PI * 2;
-    const speed = 0.5 + Math.random() * 3 * avgAmplitude * (opts.sensitivity / 100);
-    particlePool.push({
-      x: canvas.width / 2 + (Math.random() - 0.5) * canvas.width * 0.4,
-      y: canvas.height / 2 + (Math.random() - 0.5) * canvas.height * 0.4,
-      vx: Math.cos(angle) * speed,
-      vy: Math.sin(angle) * speed - 0.5,
-      life: 1,
-      decay: 0.012 + Math.random() * 0.018,
-      size: 1.5 + Math.random() * 3,
-      hue: Math.floor(Math.random() * 360),
-    });
-  }
-}
+// ══════════════════════════════════════════════════════════════
+// 4. PARTICLES — spawns from bar positions, floats + fades
+// ══════════════════════════════════════════════════════════════
+const _particles = [];
 
 function drawParticles(ctx, dataArray, bufferLength, canvas, opts) {
   const { colorScheme, sensitivity, bgImage, bgOpacity } = opts;
   drawBackground(ctx, canvas, bgImage, bgOpacity);
 
-  spawnParticles(dataArray, bufferLength, canvas, opts);
+  const usable  = Math.floor(bufferLength * 0.55);
+  const totalW  = canvas.width * 0.76;
+  const startX  = (canvas.width - totalW) / 2;
+  const slot    = totalW / usable;
+  const baseY   = canvas.height * 0.80;
+  const maxH    = canvas.height * 0.65;
+  const sens    = sensitivity / 100;
 
-  for (let i = particlePool.length - 1; i >= 0; i--) {
-    const p = particlePool[i];
-    p.x += p.vx;
-    p.y += p.vy;
-    p.vy -= 0.05; // slight float up
+  // Spawn from bar tips
+  for (let i = 0; i < usable; i += 2) {
+    const amp  = Math.min((dataArray[i] / 255) * sens, 1);
+    if (amp < 0.15 || _particles.length > 700) continue;
+    const env  = gaussian(i, usable, 0.30);
+    const barH = amp * (0.35 + env * 0.65) * maxH;
+    const x    = startX + i * slot + slot * 0.35;
+
+    _particles.push({
+      x,
+      y: baseY - barH,
+      vx: (Math.random() - 0.5) * 1.2,
+      vy: -(0.5 + Math.random() * 2.5 * amp),
+      life: 1,
+      decay: 0.014 + Math.random() * 0.02,
+      size: 1 + Math.random() * 2.5 * amp,
+      color: getColor(colorScheme, i, usable, amp),
+    });
+  }
+
+  // Draw and update
+  for (let i = _particles.length - 1; i >= 0; i--) {
+    const p = _particles[i];
+    p.x  += p.vx;
+    p.y  += p.vy;
+    p.vy += 0.03;       // gentle gravity
+    p.vx *= 0.995;
     p.life -= p.decay;
 
-    if (p.life <= 0) {
-      particlePool.splice(i, 1);
-      continue;
-    }
+    if (p.life <= 0) { _particles.splice(i, 1); continue; }
 
-    ctx.globalAlpha = p.life;
-    if (colorScheme === 'rainbow') {
-      ctx.fillStyle = `hsl(${p.hue}, 100%, 65%)`;
-    } else {
-      ctx.fillStyle = getColor(colorScheme, i, particlePool.length, p.life);
-    }
+    ctx.globalAlpha = p.life * p.life;
+    ctx.shadowColor = p.color;
+    ctx.shadowBlur  = 6;
+    ctx.fillStyle   = p.color;
     ctx.beginPath();
     ctx.arc(p.x, p.y, p.size * p.life, 0, Math.PI * 2);
     ctx.fill();
   }
+
   ctx.globalAlpha = 1;
+  ctx.shadowBlur  = 0;
 }
 
-// ── 5. Mirror Bars ─────────────────────────────────────────────
+// ══════════════════════════════════════════════════════════════
+// 5. MIRROR — symmetric bars, gradient fill, glow, centered
+// ══════════════════════════════════════════════════════════════
 function drawMirror(ctx, dataArray, bufferLength, canvas, opts) {
   const { colorScheme, sensitivity, bgImage, bgOpacity } = opts;
   drawBackground(ctx, canvas, bgImage, bgOpacity);
 
-  const usable = Math.floor(bufferLength * 0.6);
-  const barWidth = (canvas.width / usable) * 0.8;
-  const gap = (canvas.width / usable) * 0.2;
-  const midY = canvas.height / 2;
-  const maxH = canvas.height * 0.44;
+  const usable  = Math.floor(bufferLength * 0.55);
+  const totalW  = canvas.width * 0.76;
+  const startX  = (canvas.width - totalW) / 2;
+  const slot    = totalW / usable;
+  const barW    = slot * 0.72;
+  const midY    = canvas.height * 0.50;
+  const maxH    = canvas.height * 0.40;
 
-  // Center line
-  ctx.strokeStyle = 'rgba(255,255,255,0.08)';
-  ctx.lineWidth = 1;
+  // Center divider
+  ctx.strokeStyle = 'rgba(255,255,255,0.07)';
+  ctx.lineWidth   = 1;
   ctx.beginPath();
-  ctx.moveTo(0, midY);
-  ctx.lineTo(canvas.width, midY);
+  ctx.moveTo(startX, midY);
+  ctx.lineTo(startX + totalW, midY);
   ctx.stroke();
 
   for (let i = 0; i < usable; i++) {
-    const amplitude = (dataArray[i] / 255) * (sensitivity / 100);
-    const barH = amplitude * maxH;
-    const x = i * (barWidth + gap) + gap / 2;
-    const color = getColor(colorScheme, i, usable, amplitude);
+    const env    = gaussian(i, usable, 0.32);
+    const rawAmp = Math.min((dataArray[i] / 255) * (sensitivity / 100), 1);
+    const amp    = rawAmp * (0.3 + env * 0.7);
+    const barH   = amp * maxH;
+    const x      = startX + i * slot;
+    const color  = getColor(colorScheme, i, usable, rawAmp);
 
-    ctx.fillStyle = color;
+    if (barH < 1) continue;
+
     ctx.shadowColor = color;
-    ctx.shadowBlur = 4;
+    ctx.shadowBlur  = 8 + amp * 16;
 
-    // Top
-    ctx.fillRect(x, midY - barH, barWidth, barH);
-    // Bottom mirror
-    ctx.fillRect(x, midY, barWidth, barH);
+    // Up gradient
+    const gradUp = ctx.createLinearGradient(x, midY - barH, x, midY);
+    gradUp.addColorStop(0, color);
+    gradUp.addColorStop(1, 'rgba(0,0,0,0.05)');
+    ctx.fillStyle = gradUp;
+    ctx.fillRect(x, midY - barH, barW, barH);
+
+    // Down gradient (mirror)
+    const gradDn = ctx.createLinearGradient(x, midY, x, midY + barH);
+    gradDn.addColorStop(0, color);
+    gradDn.addColorStop(1, 'rgba(0,0,0,0.05)');
+    ctx.fillStyle = gradDn;
+    ctx.fillRect(x, midY, barW, barH);
   }
+
   ctx.shadowBlur = 0;
 }
 
-// ── 6. Spectrum ────────────────────────────────────────────────
+// ══════════════════════════════════════════════════════════════
+// 6. SPECTRUM — smooth filled mountain, glowing ridge line
+// ══════════════════════════════════════════════════════════════
 function drawSpectrum(ctx, dataArray, bufferLength, canvas, opts) {
   const { colorScheme, sensitivity, bgImage, bgOpacity } = opts;
   drawBackground(ctx, canvas, bgImage, bgOpacity);
 
-  const usable = Math.floor(bufferLength * 0.7);
-  const sliceW = canvas.width / usable;
-  const maxH = canvas.height;
+  const margin  = canvas.width * 0.06;
+  const drawW   = canvas.width - margin * 2;
+  const baseY   = canvas.height;
+  const maxH    = canvas.height * 0.82;
+  const usable  = Math.floor(bufferLength * 0.65);
+  const step    = Math.max(1, Math.floor(usable / 160));
+  const pts     = [];
 
-  // Draw filled area
-  ctx.beginPath();
-  ctx.moveTo(0, canvas.height);
-  for (let i = 0; i < usable; i++) {
-    const amplitude = (dataArray[i] / 255) * (sensitivity / 100);
-    const h = amplitude * maxH;
-    ctx.lineTo(i * sliceW, canvas.height - h);
+  for (let i = 0; i < usable; i += step) {
+    const amp = Math.min((dataArray[i] / 255) * (sensitivity / 100), 1);
+    pts.push({ x: margin + (i / usable) * drawW, y: baseY - amp * maxH });
   }
-  ctx.lineTo(canvas.width, canvas.height);
+  if (pts.length < 2) return;
+
+  // ── Filled area ──
+  ctx.beginPath();
+  ctx.moveTo(pts[0].x, baseY);
+  smoothPath(ctx, pts);
+  ctx.lineTo(pts[pts.length - 1].x, baseY);
   ctx.closePath();
 
-  const fillGrad = ctx.createLinearGradient(0, 0, canvas.width, 0);
-  const steps = 6;
-  for (let s = 0; s <= steps; s++) {
-    const amp = (dataArray[Math.floor((s / steps) * usable)] || 0) / 255;
-    fillGrad.addColorStop(s / steps, getColor(colorScheme, s, steps, amp));
+  const fillGrad = ctx.createLinearGradient(margin, 0, margin + drawW, 0);
+  for (let s = 0; s <= 8; s++) {
+    fillGrad.addColorStop(s / 8, getColor(colorScheme, s, 8, 0.7)
+      .replace(/hsl\(/, 'hsla(').replace(/\)$/, ',0.38)'));
   }
-  ctx.globalAlpha = 0.45;
   ctx.fillStyle = fillGrad;
   ctx.fill();
-  ctx.globalAlpha = 1;
 
-  // Draw outline on top
+  // ── Ridge line ──
   ctx.beginPath();
-  for (let i = 0; i < usable; i++) {
-    const amplitude = (dataArray[i] / 255) * (sensitivity / 100);
-    const h = amplitude * maxH;
-    i === 0 ? ctx.moveTo(0, canvas.height - h) : ctx.lineTo(i * sliceW, canvas.height - h);
-  }
-  const lineGrad = ctx.createLinearGradient(0, 0, canvas.width, 0);
-  for (let s = 0; s <= steps; s++) {
-    const amp = (dataArray[Math.floor((s / steps) * usable)] || 0) / 255;
-    lineGrad.addColorStop(s / steps, getColor(colorScheme, s, steps, amp));
+  ctx.moveTo(pts[0].x, pts[0].y);
+  smoothPath(ctx, pts.slice(1));
+
+  const lineGrad = ctx.createLinearGradient(margin, 0, margin + drawW, 0);
+  for (let s = 0; s <= 8; s++) {
+    lineGrad.addColorStop(s / 8, getColor(colorScheme, s, 8, 1));
   }
   ctx.strokeStyle = lineGrad;
-  ctx.lineWidth = 2;
-  ctx.shadowColor = 'rgba(255,255,255,0.3)';
-  ctx.shadowBlur = 8;
+  ctx.lineWidth   = 2.5;
+  ctx.lineJoin    = 'round';
+  ctx.shadowColor = getColor(colorScheme, 4, 8, 1);
+  ctx.shadowBlur  = 18;
   ctx.stroke();
+
+  // ── Second pass: brighter thin overlay ──
+  ctx.lineWidth   = 1;
+  ctx.shadowBlur  = 4;
+  ctx.globalAlpha = 0.6;
+  ctx.stroke();
+
+  ctx.globalAlpha = 1;
+  ctx.shadowBlur  = 0;
+}
+
+// ══════════════════════════════════════════════════════════════
+// 7. GLOW 3D — perspective-tilted bars like the reference image
+//    Draws bars front-to-back using painter's algorithm so the
+//    center (tallest) bars appear to be "closer" / in front.
+// ══════════════════════════════════════════════════════════════
+function drawGlow3D(ctx, dataArray, bufferLength, canvas, opts) {
+  const { colorScheme, sensitivity, bgImage, bgOpacity } = opts;
+  drawBackground(ctx, canvas, bgImage, bgOpacity);
+
+  const usable  = Math.floor(bufferLength * 0.55);
+  const totalW  = canvas.width * 0.80;
+  const startX  = (canvas.width - totalW) / 2;
+  const slot    = totalW / usable;
+  const barW    = slot * 0.78;
+  const baseY   = canvas.height * 0.76;
+  const maxH    = canvas.height * 0.68;
+
+  // Apply perspective shear — makes bars look like they're on a tilted plane
+  ctx.save();
+  const cx = canvas.width / 2;
+  const cy = canvas.height * 0.76;
+  ctx.translate(cx, cy);
+  ctx.transform(1, -0.06, 0, 0.92, 0, 0);
+  ctx.translate(-cx, -cy);
+
+  // Draw outside bars first (painter's algorithm → center drawn on top)
+  const order = [];
+  for (let i = 0; i < usable; i++) order.push(i);
+  order.sort((a, b) => Math.abs(a - usable / 2) - Math.abs(b - usable / 2));
+  // This sorts from outside (far) to center (near)
+  order.reverse(); // near first... actually we want far first so center overlaps
+  // Re-sort: far from center first
+  order.sort((a, b) => Math.abs(b - usable / 2) - Math.abs(a - usable / 2));
+
+  for (const i of order) {
+    const env    = gaussian(i, usable, 0.26);
+    const rawAmp = Math.min((dataArray[i] / 255) * (sensitivity / 100), 1);
+    const amp    = rawAmp * (0.18 + env * 0.82);
+    const barH   = amp * maxH;
+    const x      = startX + i * slot;
+    const color  = getColor(colorScheme, i, usable, rawAmp);
+
+    if (barH < 2) continue;
+
+    // Strong glow increases near center
+    const glowStr = 14 + amp * 30 + env * 18;
+    ctx.shadowColor = color;
+    ctx.shadowBlur  = glowStr;
+
+    // Bar gradient: bright top → almost invisible base
+    const grad = ctx.createLinearGradient(x, baseY - barH, x, baseY);
+    grad.addColorStop(0.0, color);
+    grad.addColorStop(0.55, color.replace(/(\d+)%\)/, (_, l) => `${Math.max(+l - 20, 8)}%)`));
+    grad.addColorStop(1.0, 'rgba(0,0,0,0)');
+
+    ctx.fillStyle = grad;
+    const r = Math.min(barW / 2, 4);
+    ctx.beginPath();
+    ctx.moveTo(x, baseY);
+    ctx.lineTo(x, baseY - barH + r);
+    ctx.arcTo(x, baseY - barH, x + r, baseY - barH, r);
+    ctx.lineTo(x + barW - r, baseY - barH);
+    ctx.arcTo(x + barW, baseY - barH, x + barW, baseY - barH + r, r);
+    ctx.lineTo(x + barW, baseY);
+    ctx.closePath();
+    ctx.fill();
+
+    // Bright tip cap
+    if (amp > 0.08) {
+      ctx.shadowBlur  = glowStr * 1.4;
+      ctx.fillStyle   = 'rgba(255,255,255,0.6)';
+      ctx.globalAlpha = amp * env;
+      ctx.fillRect(x + barW * 0.1, baseY - barH - 1, barW * 0.8, 3);
+      ctx.globalAlpha = 1;
+    }
+
+    // Floor reflection (compressed below base)
+    ctx.shadowBlur  = 0;
+    ctx.globalAlpha = 0.18 * amp * env;
+    ctx.fillStyle   = color;
+    ctx.save();
+    ctx.translate(x + barW / 2, baseY);
+    ctx.scale(1, -0.35);
+    ctx.translate(-(x + barW / 2), -baseY);
+    ctx.fillRect(x, baseY - barH * 0.7, barW, barH * 0.7);
+    ctx.restore();
+    ctx.globalAlpha = 1;
+  }
+
+  ctx.restore(); // pop perspective transform
   ctx.shadowBlur = 0;
+
+  // Floating spark particles at bar tips
+  const avgAmp = dataArray.slice(0, usable).reduce((s, v) => s + v, 0) / usable / 255;
+  if (avgAmp > 0.12 && _particles.length < 500) {
+    const sparkI = Math.floor(Math.random() * usable);
+    const sEnv   = gaussian(sparkI, usable, 0.26);
+    const sAmp   = Math.min((dataArray[sparkI] / 255) * (sensitivity / 100), 1);
+    const sBarH  = sAmp * (0.18 + sEnv * 0.82) * maxH;
+    const sx     = startX + sparkI * slot + barW / 2;
+    // Project through perspective (approximate)
+    _particles.push({
+      x:     sx,
+      y:     baseY - sBarH,
+      vx:    (Math.random() - 0.5) * 1.5,
+      vy:    -(0.3 + Math.random() * 2),
+      life:  1,
+      decay: 0.018 + Math.random() * 0.022,
+      size:  0.8 + Math.random() * 2,
+      color: getColor(colorScheme, sparkI, usable, sAmp),
+    });
+  }
+
+  // Render any carried-over particles from particle pool
+  for (let i = _particles.length - 1; i >= 0; i--) {
+    const p = _particles[i];
+    p.x  += p.vx;
+    p.y  += p.vy;
+    p.vy += 0.04;
+    p.life -= p.decay;
+    if (p.life <= 0) { _particles.splice(i, 1); continue; }
+    ctx.globalAlpha = p.life * p.life;
+    ctx.shadowColor = p.color;
+    ctx.shadowBlur  = 5;
+    ctx.fillStyle   = p.color;
+    ctx.beginPath();
+    ctx.arc(p.x, p.y, p.size * p.life, 0, Math.PI * 2);
+    ctx.fill();
+  }
+
+  ctx.globalAlpha = 1;
+  ctx.shadowBlur  = 0;
 }
 
 // ── Dispatcher ─────────────────────────────────────────────────
 window.Visualizers = {
-  bars: drawBars,
+  bars:     drawBars,
   waveform: drawWaveform,
   circular: drawCircular,
   particles: drawParticles,
-  mirror: drawMirror,
+  mirror:   drawMirror,
   spectrum: drawSpectrum,
+  glow3d:   drawGlow3D,
 };
