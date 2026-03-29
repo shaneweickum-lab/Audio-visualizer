@@ -144,7 +144,7 @@
             <input type="text" id="artistName" placeholder="Optional" />
           </div>
           <div class="text-field-row">
-            <label for="titlePosition">Title Position</label>
+            <label>Title Position</label>
             <div class="position-toggle">
               <button class="pos-btn active" data-pos="top">Top</button>
               <button class="pos-btn" data-pos="bottom">Bottom</button>
@@ -153,9 +153,22 @@
           <div class="text-field-row caption-row">
             <label for="captionText">
               Lyrics / Captions
-              <span class="label-hint">One line per caption — auto-timed across the song</span>
             </label>
-            <textarea id="captionText" rows="5" placeholder="Paste lyrics here&#10;Each line shows at an equal interval&#10;..."></textarea>
+            <div class="lyrics-toolbar">
+              <span id="lyricsModebadge" class="lyrics-badge"></span>
+              <div class="lyrics-actions">
+                <label class="btn-lrc-upload" title="Upload .lrc file">
+                  <input type="file" id="lrcFileInput" accept=".lrc,.txt" hidden />
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+                  Upload .lrc
+                </label>
+                <button class="btn-tap-sync" id="tapSyncBtn" title="Tap along to set timestamps">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 8h1a4 4 0 0 1 0 8h-1"/><path d="M2 8h16v9a4 4 0 0 1-4 4H6a4 4 0 0 1-4-4V8z"/><line x1="6" y1="1" x2="6" y2="4"/><line x1="10" y1="1" x2="10" y2="4"/><line x1="14" y1="1" x2="14" y2="4"/></svg>
+                  Tap Sync
+                </button>
+              </div>
+            </div>
+            <textarea id="captionText" rows="5" placeholder="Paste lyrics (one line per caption)&#10;&#10;Or paste LRC format for exact timing:&#10;[00:12.50]First line&#10;[00:15.30]Second line"></textarea>
           </div>
         </section>
 
@@ -229,6 +242,17 @@
         <circle cx="12" cy="12" r="3.5" fill="currentColor" stroke="none"/>
       </svg>
     </button>
+
+    <!-- Tap-to-sync banner — shown during tap sync mode -->
+    <div class="sync-banner" id="syncBanner" style="display:none;">
+      <div class="sync-banner-inner" id="syncTapArea">
+        <div class="sync-instruction">TAP when you hear this line</div>
+        <div class="sync-line" id="syncCurrentLine"></div>
+        <div class="sync-next" id="syncNextLine"></div>
+        <div class="sync-progress" id="syncProgress"></div>
+      </div>
+      <button class="sync-stop-btn" id="syncStopBtn">✕ Stop Sync</button>
+    </div>
 
     <!-- Mobile tab bar (hidden on desktop via CSS) -->
     <nav class="mobile-tab-bar" id="mobileTabBar">

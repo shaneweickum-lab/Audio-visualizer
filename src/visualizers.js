@@ -78,10 +78,10 @@ function drawStage(ctx, canvas, baseY, stageH) {
 }
 
 // ── Text overlay ───────────────────────────────────────────────
-// opts: { title, artist, captionLines, elapsed, songDuration, titlePosition }
+// opts: { title, artist, currentLine, titlePosition }
 function drawTextOverlay(ctx, canvas, opts) {
-  const { title, artist, captionLines, elapsed, songDuration, titlePosition } = opts;
-  if (!title && !artist && (!captionLines || !captionLines.length)) return;
+  const { title, artist, currentLine, titlePosition } = opts;
+  if (!title && !artist && !currentLine) return;
 
   const W  = canvas.width;
   const H  = canvas.height;
@@ -145,13 +145,9 @@ function drawTextOverlay(ctx, canvas, opts) {
   }
 
   // ── Caption line ──
-  if (captionLines && captionLines.length && songDuration > 0) {
-    const idx  = Math.min(
-      Math.floor((elapsed / songDuration) * captionLines.length),
-      captionLines.length - 1
-    );
-    const line = captionLines[idx];
-    if (line) {
+  const line = currentLine || '';
+  if (line) {
+    {
       const fs   = Math.max(Math.round(28 * sc), 12);
       ctx.font   = `600 ${fs}px 'Segoe UI', system-ui, sans-serif`;
       const tw   = ctx.measureText(line).width;

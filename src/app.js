@@ -20,6 +20,12 @@
   let currentViz     = 'bars';
   let currentColor   = 'neon';
 
+  let parsedLyrics  = null;  // null = even distribution; [{time,text}] = LRC/tapped
+  let tapSyncActive = false;
+  let tapSyncIndex  = 0;
+  let tapSyncTimes  = [];
+  let tapSyncLines  = [];
+
   // ── DOM refs ───────────────────────────────────────────────────
   const canvas        = document.getElementById('visualizerCanvas');
   const ctx           = canvas.getContext('2d');
@@ -54,15 +60,158 @@
     });
   });
 
+  // ── LRC parser ────────────────────────────────────────────────
+  // Returns [{time (seconds), text}] sorted by time, or null if no timestamps found.
+  function parseLRC(text) {
+    if (!/\[\d{1,2}:\d{2}/.test(text)) return null;
+    const lines = [];
+    text.split('\n').forEach(raw => {
+      // Match [mm:ss], [mm:ss.xx], [mm:ss:xx] variants
+      const m = raw.trim().match(/^\[(\d{1,2}):(\d{2})(?:[.:](\d{1,3}))?\](.*)$/);
+      if (!m) return;
+      const ms   = m[3] ? parseInt(m[3].padEnd(3, '0')) : 0;
+      const time = parseInt(m[1]) * 60 + parseInt(m[2]) + ms / 1000;
+      const txt  = m[4].trim();
+      if (txt) lines.push({ time, text: txt });
+    });
+    return lines.length ? lines.sort((a, b) => a.time - b.time) : null;
+  }
+
+  // ── Current lyric line ─────────────────────────────────────────
+  function getCurrentLine(elapsed) {
+    if (parsedLyrics) {
+      let result = '';
+      for (const l of parsedLyrics) {
+        if (elapsed >= l.time) result = l.text;
+        else break;
+      }
+      return result;
+    }
+    // Plain text: evenly spaced
+    const lines = captionTextarea.value.split('\n').map(l => l.trim()).filter(Boolean);
+    if (!lines.length || !audioBuffer || audioBuffer.duration === 0) return '';
+    const idx = Math.min(
+      Math.floor((elapsed / audioBuffer.duration) * lines.length),
+      lines.length - 1
+    );
+    return lines[idx];
+  }
+
+  // Auto-detect LRC when user edits the textarea
+  captionTextarea.addEventListener('input', () => {
+    parsedLyrics = parseLRC(captionTextarea.value);
+    updateLyricsMode();
+  });
+
+  function updateLyricsMode() {
+    const badge = document.getElementById('lyricsModebadge');
+    if (!badge) return;
+    if (parsedLyrics) {
+      badge.textContent = `✓ ${parsedLyrics.length} timestamped lines`;
+      badge.className = 'lyrics-badge lrc';
+    } else {
+      const count = captionTextarea.value.split('\n').filter(l => l.trim()).length;
+      badge.textContent = count ? `${count} lines — auto-timed` : '';
+      badge.className = 'lyrics-badge';
+    }
+  }
+
+  // ── LRC file upload ───────────────────────────────────────────
+  const lrcFileInput = document.getElementById('lrcFileInput');
+  if (lrcFileInput) {
+    lrcFileInput.addEventListener('change', () => {
+      const file = lrcFileInput.files[0];
+      if (!file) return;
+      const reader = new FileReader();
+      reader.onload = e => {
+        captionTextarea.value = e.target.result;
+        parsedLyrics = parseLRC(e.target.result);
+        updateLyricsMode();
+      };
+      reader.readAsText(file);
+      lrcFileInput.value = '';
+    });
+  }
+
+  // ── Tap to Sync ───────────────────────────────────────────────
+  const tapSyncBtn  = document.getElementById('tapSyncBtn');
+  const syncBanner  = document.getElementById('syncBanner');
+  const syncLineEl  = document.getElementById('syncCurrentLine');
+  const syncNextEl  = document.getElementById('syncNextLine');
+  const syncProgEl  = document.getElementById('syncProgress');
+  const syncTapArea = document.getElementById('syncTapArea');
+  const syncStopBtn = document.getElementById('syncStopBtn');
+
+  if (tapSyncBtn) {
+    tapSyncBtn.addEventListener('click', () => {
+      if (!audioBuffer) { showError('Upload an audio file first.'); return; }
+      tapSyncLines = captionTextarea.value.split('\n').map(l => l.trim()).filter(Boolean);
+      if (!tapSyncLines.length) { showError('Add lyrics lines first, then tap sync.'); return; }
+      tapSyncTimes  = [];
+      tapSyncIndex  = 0;
+      tapSyncActive = true;
+      if (isPlaying) stopPlayback();
+      startOffset = 0;
+      startPlayback(0);
+      showSyncBanner();
+    });
+  }
+
+  function showSyncBanner() {
+    if (!syncBanner) return;
+    syncBanner.style.display = 'flex';
+    updateSyncBanner();
+  }
+
+  function updateSyncBanner() {
+    if (!syncLineEl || !syncProgEl) return;
+    syncLineEl.textContent = tapSyncLines[tapSyncIndex] || '';
+    syncNextEl.textContent = tapSyncLines[tapSyncIndex + 1]
+      ? 'Next: ' + tapSyncLines[tapSyncIndex + 1]
+      : 'Last line — tap when you hear it';
+    syncProgEl.textContent = `Line ${tapSyncIndex + 1} of ${tapSyncLines.length}`;
+  }
+
+  function hideSyncBanner() {
+    if (syncBanner) syncBanner.style.display = 'none';
+    tapSyncActive = false;
+  }
+
+  function doTap() {
+    if (!tapSyncActive || !isPlaying) return;
+    const elapsed = startOffset + (audioCtx.currentTime - startTime);
+    tapSyncTimes.push(elapsed);
+    tapSyncIndex++;
+
+    if (tapSyncIndex >= tapSyncLines.length) {
+      // Build parsed lyrics from tapped times
+      parsedLyrics = tapSyncLines.map((text, i) => ({ time: tapSyncTimes[i], text }));
+      // Write LRC text back to textarea so user can edit/save it
+      captionTextarea.value = parsedLyrics.map(l => {
+        const m  = String(Math.floor(l.time / 60)).padStart(2, '0');
+        const s  = (l.time % 60).toFixed(2).padStart(5, '0');
+        return `[${m}:${s}]${l.text}`;
+      }).join('\n');
+      updateLyricsMode();
+      hideSyncBanner();
+    } else {
+      updateSyncBanner();
+    }
+  }
+
+  if (syncTapArea) syncTapArea.addEventListener('click', doTap);
+  if (syncTapArea) syncTapArea.addEventListener('touchstart', e => { e.preventDefault(); doTap(); }, { passive: false });
+  if (syncStopBtn) syncStopBtn.addEventListener('click', () => {
+    hideSyncBanner();
+    stopPlayback();
+  });
+
+  // ── Updated getTextOpts ───────────────────────────────────────
   function getTextOpts(elapsed = 0) {
-    const raw    = captionTextarea.value;
-    const lines  = raw.split('\n').map(l => l.trim()).filter(Boolean);
     return {
       title:         songTitleInput.value.trim(),
       artist:        artistNameInput.value.trim(),
-      captionLines:  lines,
-      elapsed,
-      songDuration:  audioBuffer ? audioBuffer.duration : 0,
+      currentLine:   getCurrentLine(elapsed),
       titlePosition,
     };
   }
