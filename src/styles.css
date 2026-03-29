@@ -1,0 +1,389 @@
+/* ── Reset & base ─────────────────────────────────────────────── */
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+:root {
+  --bg: #0d0f14;
+  --surface: #161a24;
+  --surface2: #1e2435;
+  --border: #2a3050;
+  --accent: #6c63ff;
+  --accent2: #ff6584;
+  --text: #e0e4f0;
+  --text-muted: #7a84a0;
+  --radius: 10px;
+  --transition: 0.2s ease;
+}
+
+html, body { height: 100%; font-family: 'Segoe UI', system-ui, sans-serif; background: var(--bg); color: var(--text); overflow: hidden; }
+
+/* ── App layout ───────────────────────────────────────────────── */
+.app { display: flex; flex-direction: column; height: 100vh; }
+
+.app-header {
+  padding: 14px 24px;
+  background: var(--surface);
+  border-bottom: 1px solid var(--border);
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  flex-shrink: 0;
+}
+
+.app-header h1 {
+  font-size: 1.2rem;
+  font-weight: 700;
+  background: linear-gradient(135deg, var(--accent), var(--accent2));
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+  white-space: nowrap;
+}
+
+.app-header p { font-size: 0.78rem; color: var(--text-muted); }
+
+.app-main { display: flex; flex: 1; overflow: hidden; }
+
+/* ── Controls panel ───────────────────────────────────────────── */
+.controls-panel {
+  width: 300px;
+  flex-shrink: 0;
+  background: var(--surface);
+  border-right: 1px solid var(--border);
+  overflow-y: auto;
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
+.controls-panel::-webkit-scrollbar { width: 5px; }
+.controls-panel::-webkit-scrollbar-track { background: transparent; }
+.controls-panel::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+
+.control-section h2 {
+  font-size: 0.7rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+  color: var(--text-muted);
+  margin-bottom: 10px;
+}
+
+/* ── Upload zones ─────────────────────────────────────────────── */
+.upload-zone {
+  border: 1.5px dashed var(--border);
+  border-radius: var(--radius);
+  cursor: pointer;
+  transition: border-color var(--transition), background var(--transition);
+  overflow: hidden;
+  min-height: 80px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.upload-zone:hover, .upload-zone.drag-over {
+  border-color: var(--accent);
+  background: rgba(108, 99, 255, 0.06);
+}
+
+.upload-placeholder {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  padding: 16px;
+  color: var(--text-muted);
+  font-size: 0.78rem;
+  text-align: center;
+}
+
+.upload-placeholder svg { width: 28px; height: 28px; }
+
+.upload-preview {
+  width: 100%;
+  max-height: 130px;
+  object-fit: cover;
+  display: block;
+}
+
+.audio-info {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 12px 16px;
+  width: 100%;
+  font-size: 0.82rem;
+  color: var(--accent);
+}
+
+.audio-info svg { width: 20px; height: 20px; flex-shrink: 0; }
+.audio-info span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* ── Visualization grid ───────────────────────────────────────── */
+.viz-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+}
+
+.viz-btn {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  padding: 10px 8px;
+  background: var(--surface2);
+  border: 1.5px solid var(--border);
+  border-radius: var(--radius);
+  cursor: pointer;
+  color: var(--text-muted);
+  font-size: 0.72rem;
+  font-weight: 600;
+  transition: all var(--transition);
+}
+
+.viz-btn svg { width: 36px; height: 28px; }
+.viz-btn:hover { border-color: var(--accent); color: var(--text); }
+.viz-btn.active {
+  border-color: var(--accent);
+  background: rgba(108, 99, 255, 0.15);
+  color: var(--accent);
+}
+
+/* ── Settings rows ────────────────────────────────────────────── */
+.setting-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 10px;
+  font-size: 0.8rem;
+}
+
+.setting-row label { flex: 1; color: var(--text-muted); white-space: nowrap; }
+
+.setting-row select, .setting-row input[type="range"] { flex: 2; }
+
+.setting-row span { width: 36px; text-align: right; color: var(--text-muted); font-size: 0.75rem; }
+
+select {
+  background: var(--surface2);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  color: var(--text);
+  padding: 5px 8px;
+  font-size: 0.8rem;
+  cursor: pointer;
+  width: 100%;
+}
+
+select:focus { outline: none; border-color: var(--accent); }
+
+input[type="range"] {
+  -webkit-appearance: none;
+  height: 4px;
+  background: var(--border);
+  border-radius: 2px;
+  cursor: pointer;
+}
+
+input[type="range"]::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: var(--accent);
+  cursor: pointer;
+}
+
+/* ── Buttons ──────────────────────────────────────────────────── */
+.btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 10px 18px;
+  border: none;
+  border-radius: var(--radius);
+  cursor: pointer;
+  font-size: 0.85rem;
+  font-weight: 600;
+  transition: all var(--transition);
+}
+
+.btn:disabled { opacity: 0.4; cursor: not-allowed; }
+
+.btn svg { width: 18px; height: 18px; }
+
+.btn-record {
+  width: 100%;
+  background: linear-gradient(135deg, var(--accent2), #ff3d68);
+  color: white;
+  margin-top: 4px;
+}
+
+.btn-record:not(:disabled):hover { filter: brightness(1.15); transform: translateY(-1px); }
+.btn-record:not(:disabled):active { transform: translateY(0); }
+
+.btn-record.recording {
+  background: linear-gradient(135deg, #ff3d68, #c0392b);
+  animation: pulse 1.5s infinite;
+}
+
+@keyframes pulse {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(255,61,104,0.4); }
+  50% { box-shadow: 0 0 0 8px rgba(255,61,104,0); }
+}
+
+.record-status {
+  margin-top: 8px;
+  font-size: 0.78rem;
+  color: var(--text-muted);
+  text-align: center;
+  padding: 6px;
+  background: var(--surface2);
+  border-radius: 6px;
+}
+
+/* ── Preview panel ────────────────────────────────────────────── */
+.preview-panel {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  background: #0a0c12;
+  overflow: hidden;
+}
+
+.canvas-wrapper {
+  flex: 1;
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+}
+
+#visualizerCanvas {
+  max-width: 100%;
+  max-height: 100%;
+  display: block;
+}
+
+.canvas-overlay {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(13, 15, 20, 0.7);
+  color: var(--text-muted);
+  font-size: 0.9rem;
+  text-align: center;
+  pointer-events: none;
+}
+
+.canvas-overlay p { padding: 24px; }
+
+/* ── Playback controls ────────────────────────────────────────── */
+.playback-controls {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 12px 20px;
+  background: var(--surface);
+  border-top: 1px solid var(--border);
+  flex-shrink: 0;
+}
+
+.btn-play {
+  width: 40px;
+  height: 40px;
+  min-width: 40px;
+  border-radius: 50%;
+  background: var(--accent);
+  color: white;
+  padding: 0;
+  flex-shrink: 0;
+}
+
+.btn-play:not(:disabled):hover { filter: brightness(1.2); }
+.btn-play svg { width: 16px; height: 16px; }
+
+.progress-bar-wrap { flex: 1; }
+
+.progress-bar {
+  height: 5px;
+  background: var(--border);
+  border-radius: 3px;
+  cursor: pointer;
+  position: relative;
+  overflow: hidden;
+}
+
+.progress-fill {
+  height: 100%;
+  background: linear-gradient(90deg, var(--accent), var(--accent2));
+  border-radius: 3px;
+  width: 0%;
+  transition: width 0.1s linear;
+}
+
+.time-display {
+  display: flex;
+  justify-content: space-between;
+  font-size: 0.72rem;
+  color: var(--text-muted);
+  margin-top: 4px;
+}
+
+.volume-wrap {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+}
+
+.volume-wrap svg { width: 18px; height: 18px; color: var(--text-muted); flex-shrink: 0; }
+
+.volume-wrap input[type="range"] { width: 80px; }
+
+/* ── Download progress overlay ────────────────────────────────── */
+.download-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0,0,0,0.75);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 100;
+}
+
+.download-card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  padding: 32px 40px;
+  text-align: center;
+  min-width: 280px;
+}
+
+.download-card h3 { margin-bottom: 8px; font-size: 1rem; }
+.download-card p { font-size: 0.82rem; color: var(--text-muted); margin-bottom: 20px; }
+
+.download-progress-bar {
+  height: 6px;
+  background: var(--border);
+  border-radius: 3px;
+  overflow: hidden;
+  margin-bottom: 12px;
+}
+
+.download-progress-fill {
+  height: 100%;
+  background: linear-gradient(90deg, var(--accent), var(--accent2));
+  border-radius: 3px;
+  transition: width 0.3s ease;
+  width: 0%;
+}
+
+.download-timer { font-size: 0.78rem; color: var(--text-muted); }
