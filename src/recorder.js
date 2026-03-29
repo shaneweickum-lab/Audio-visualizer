@@ -123,7 +123,7 @@ window.Recorder = (function () {
         }
 
         analyser.getByteFrequencyData(dataArray);
-        renderFrame(analyser, dataArray, bufferLength);
+        renderFrame(analyser, dataArray, bufferLength, elapsed);
 
         if (onProgress) onProgress(Math.min(elapsed / duration, 1));
         animId = requestAnimationFrame(loop);

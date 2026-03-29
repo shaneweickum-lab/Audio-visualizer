@@ -47,23 +47,21 @@ function drawBackground(ctx, canvas, bgImage, bgOpacity) {
   ctx.fillRect(0, 0, canvas.width, canvas.height);
 
   if (bgImage) {
-    // Cap effective opacity so image never overpowers the visualizer
-    const effectiveOpacity = Math.min(bgOpacity, 75) / 100;
-    ctx.globalAlpha = effectiveOpacity;
+    ctx.globalAlpha = bgOpacity / 100;   // full slider range, no cap
     const scale = Math.max(canvas.width / bgImage.width, canvas.height / bgImage.height);
     const w = bgImage.width * scale, h = bgImage.height * scale;
     ctx.drawImage(bgImage, (canvas.width - w) / 2, (canvas.height - h) / 2, w, h);
     ctx.globalAlpha = 1;
   }
 
-  // Strong vignette — darkens edges and dims the overall background
+  // Lighter vignette — keeps edges dark without killing the background
   const vig = ctx.createRadialGradient(
-    canvas.width / 2, canvas.height / 2, canvas.width * 0.05,
+    canvas.width / 2, canvas.height / 2, canvas.width * 0.1,
     canvas.width / 2, canvas.height / 2, canvas.width * 0.82
   );
-  vig.addColorStop(0,   'rgba(0,0,0,0.38)');
-  vig.addColorStop(0.6, 'rgba(0,0,0,0.62)');
-  vig.addColorStop(1,   'rgba(0,0,0,0.88)');
+  vig.addColorStop(0,   'rgba(0,0,0,0.10)');
+  vig.addColorStop(0.5, 'rgba(0,0,0,0.38)');
+  vig.addColorStop(1,   'rgba(0,0,0,0.75)');
   ctx.fillStyle = vig;
   ctx.fillRect(0, 0, canvas.width, canvas.height);
 }
@@ -77,6 +75,106 @@ function drawStage(ctx, canvas, baseY, stageH) {
   grad.addColorStop(1,   'rgba(0,0,0,0)');
   ctx.fillStyle = grad;
   ctx.fillRect(0, baseY - stageH, canvas.width, stageH * 1.5);
+}
+
+// ── Text overlay ───────────────────────────────────────────────
+// opts: { title, artist, captionLines, elapsed, songDuration, titlePosition }
+function drawTextOverlay(ctx, canvas, opts) {
+  const { title, artist, captionLines, elapsed, songDuration, titlePosition } = opts;
+  if (!title && !artist && (!captionLines || !captionLines.length)) return;
+
+  const W  = canvas.width;
+  const H  = canvas.height;
+  // Scale font sizes proportionally to canvas width (reference: 1280px)
+  const sc = W / 1280;
+
+  ctx.save();
+  ctx.textAlign    = 'center';
+  ctx.textBaseline = 'middle';
+
+  // ── Pill background helper ──
+  function drawPill(x, y, w, h, alpha = 0.52) {
+    const r = h / 2;
+    ctx.fillStyle = `rgba(0,0,0,${alpha})`;
+    ctx.beginPath();
+    ctx.moveTo(x + r, y);
+    ctx.arcTo(x + w, y, x + w, y + h, r);
+    ctx.arcTo(x + w, y + h, x, y + h, r);
+    ctx.arcTo(x, y + h, x, y, r);
+    ctx.arcTo(x, y, x + w, y, r);
+    ctx.closePath();
+    ctx.fill();
+  }
+
+  const atBottom = titlePosition === 'bottom';
+
+  // ── Title ──
+  if (title) {
+    const fs   = Math.max(Math.round(36 * sc), 14);
+    ctx.font   = `700 ${fs}px 'Segoe UI', system-ui, sans-serif`;
+    const tw   = ctx.measureText(title).width;
+    const ph   = fs * 1.7;
+    const pw   = tw + 40 * sc;
+    const py   = atBottom ? H * 0.82 - ph / 2 : H * 0.07;
+    const px   = W / 2 - pw / 2;
+    drawPill(px, py, pw, ph);
+    ctx.shadowColor = 'rgba(0,0,0,0.9)';
+    ctx.shadowBlur  = 10;
+    ctx.fillStyle   = 'rgba(255,255,255,0.97)';
+    ctx.fillText(title, W / 2, py + ph / 2);
+    ctx.shadowBlur  = 0;
+  }
+
+  // ── Artist ──
+  if (artist) {
+    const titleFs = Math.max(Math.round(36 * sc), 14);
+    const fs   = Math.max(Math.round(22 * sc), 11);
+    ctx.font   = `400 ${fs}px 'Segoe UI', system-ui, sans-serif`;
+    const tw   = ctx.measureText(artist).width;
+    const ph   = fs * 1.65;
+    const pw   = tw + 32 * sc;
+    const titleH = title ? titleFs * 1.7 : 0;
+    const titleGap = title ? 6 * sc : 0;
+    const py = atBottom
+      ? H * 0.82 - titleH - ph / 2 - titleGap
+      : H * 0.07 + titleH + titleGap;
+    const px = W / 2 - pw / 2;
+    drawPill(px, py, pw, ph, 0.42);
+    ctx.fillStyle = 'rgba(210,215,235,0.90)';
+    ctx.fillText(artist, W / 2, py + ph / 2);
+  }
+
+  // ── Caption line ──
+  if (captionLines && captionLines.length && songDuration > 0) {
+    const idx  = Math.min(
+      Math.floor((elapsed / songDuration) * captionLines.length),
+      captionLines.length - 1
+    );
+    const line = captionLines[idx];
+    if (line) {
+      const fs   = Math.max(Math.round(28 * sc), 12);
+      ctx.font   = `600 ${fs}px 'Segoe UI', system-ui, sans-serif`;
+      const tw   = ctx.measureText(line).width;
+      const ph   = fs * 1.75;
+      const pw   = Math.min(tw + 44 * sc, W * 0.9);
+      const py   = H * 0.88 - ph / 2;
+      const px   = W / 2 - pw / 2;
+      drawPill(px, py, pw, ph, 0.58);
+      ctx.shadowColor = 'rgba(0,0,0,0.95)';
+      ctx.shadowBlur  = 12;
+      ctx.fillStyle   = 'rgba(255,255,255,0.97)';
+      // Truncate text that overflows the pill
+      let text = line;
+      while (ctx.measureText(text).width > pw - 44 * sc && text.length > 1) {
+        text = text.slice(0, -1);
+      }
+      if (text !== line) text = text.trimEnd() + '…';
+      ctx.fillText(text, W / 2, py + ph / 2);
+      ctx.shadowBlur  = 0;
+    }
+  }
+
+  ctx.restore();
 }
 
 // ── Shared helpers ─────────────────────────────────────────────
@@ -643,12 +741,20 @@ function drawGlow3D(ctx, dataArray, bufferLength, canvas, opts) {
 }
 
 // ── Dispatcher ─────────────────────────────────────────────────
+// Each viz is wrapped so text overlay is always drawn last (on top).
+function withOverlay(fn) {
+  return function (ctx, dataArray, bufferLength, canvas, opts) {
+    fn(ctx, dataArray, bufferLength, canvas, opts);
+    drawTextOverlay(ctx, canvas, opts);
+  };
+}
+
 window.Visualizers = {
-  bars:     drawBars,
-  waveform: drawWaveform,
-  circular: drawCircular,
-  particles: drawParticles,
-  mirror:   drawMirror,
-  spectrum: drawSpectrum,
-  glow3d:   drawGlow3D,
+  bars:      withOverlay(drawBars),
+  waveform:  withOverlay(drawWaveform),
+  circular:  withOverlay(drawCircular),
+  particles: withOverlay(drawParticles),
+  mirror:    withOverlay(drawMirror),
+  spectrum:  withOverlay(drawSpectrum),
+  glow3d:    withOverlay(drawGlow3D),
 };

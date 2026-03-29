@@ -39,6 +39,34 @@
   const vizButtons   = document.querySelectorAll('.viz-btn');
   const colorButtons = document.querySelectorAll('.color-btn');
 
+  // ── Text overlay inputs ────────────────────────────────────────
+  const songTitleInput  = document.getElementById('songTitle');
+  const artistNameInput = document.getElementById('artistName');
+  const captionTextarea = document.getElementById('captionText');
+  const posBtns         = document.querySelectorAll('.pos-btn');
+  let   titlePosition   = 'top';
+
+  posBtns.forEach(btn => {
+    btn.addEventListener('click', () => {
+      posBtns.forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+      titlePosition = btn.dataset.pos;
+    });
+  });
+
+  function getTextOpts(elapsed = 0) {
+    const raw    = captionTextarea.value;
+    const lines  = raw.split('\n').map(l => l.trim()).filter(Boolean);
+    return {
+      title:         songTitleInput.value.trim(),
+      artist:        artistNameInput.value.trim(),
+      captionLines:  lines,
+      elapsed,
+      songDuration:  audioBuffer ? audioBuffer.duration : 0,
+      titlePosition,
+    };
+  }
+
   const bgOpacitySlider   = document.getElementById('bgOpacity');
   const bgOpacityValue    = document.getElementById('bgOpacityValue');
   const sensitivitySlider = document.getElementById('sensitivity');
@@ -184,6 +212,15 @@
 
       audioFileName.textContent = file.name;
       totalTimeEl.textContent   = formatTime(audioBuffer.duration);
+
+      // Auto-populate title from filename (strip extension, clean separators)
+      if (!songTitleInput.value) {
+        songTitleInput.value = file.name
+          .replace(/\.[^/.]+$/, '')
+          .replace(/[-_]+/g, ' ')
+          .replace(/\s+/g, ' ')
+          .trim();
+      }
       stopPlayback();
       updateReadyState();
 
@@ -344,6 +381,7 @@
         sensitivity: parseInt(sensitivitySlider.value),
         bgImage,
         bgOpacity: parseInt(bgOpacitySlider.value),
+        ...getTextOpts(elapsed),
       });
     }
   }
@@ -427,7 +465,7 @@
         canvas,
         audioBuffer,
         audioCtx,
-        (analyser, dArray, bLen) => {
+        (analyser, dArray, bLen, elapsed) => {
           const vizFn = Visualizers[currentViz];
           if (vizFn) {
             vizFn(ctx, dArray, bLen, canvas, {
@@ -435,6 +473,7 @@
               sensitivity: parseInt(sensitivitySlider.value),
               bgImage,
               bgOpacity: parseInt(bgOpacitySlider.value),
+              ...getTextOpts(elapsed || 0),
             });
           }
         },

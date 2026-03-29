@@ -133,6 +133,32 @@
           </div>
         </section>
 
+        <section class="control-section" data-tab="settings" id="sectionText">
+          <h2>Song Info &amp; Captions</h2>
+          <div class="text-field-row">
+            <label for="songTitle">Song Title</label>
+            <input type="text" id="songTitle" placeholder="Auto-filled from filename" />
+          </div>
+          <div class="text-field-row">
+            <label for="artistName">Artist Name</label>
+            <input type="text" id="artistName" placeholder="Optional" />
+          </div>
+          <div class="text-field-row">
+            <label for="titlePosition">Title Position</label>
+            <div class="position-toggle">
+              <button class="pos-btn active" data-pos="top">Top</button>
+              <button class="pos-btn" data-pos="bottom">Bottom</button>
+            </div>
+          </div>
+          <div class="text-field-row caption-row">
+            <label for="captionText">
+              Lyrics / Captions
+              <span class="label-hint">One line per caption — auto-timed across the song</span>
+            </label>
+            <textarea id="captionText" rows="5" placeholder="Paste lyrics here&#10;Each line shows at an equal interval&#10;..."></textarea>
+          </div>
+        </section>
+
         <section class="control-section" data-tab="settings" id="sectionSettings">
           <h2>Visual Settings</h2>
           <div class="setting-row">
