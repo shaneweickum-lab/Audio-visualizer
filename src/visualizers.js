@@ -47,22 +47,36 @@ function drawBackground(ctx, canvas, bgImage, bgOpacity) {
   ctx.fillRect(0, 0, canvas.width, canvas.height);
 
   if (bgImage) {
-    ctx.globalAlpha = bgOpacity / 100;
+    // Cap effective opacity so image never overpowers the visualizer
+    const effectiveOpacity = Math.min(bgOpacity, 75) / 100;
+    ctx.globalAlpha = effectiveOpacity;
     const scale = Math.max(canvas.width / bgImage.width, canvas.height / bgImage.height);
     const w = bgImage.width * scale, h = bgImage.height * scale;
     ctx.drawImage(bgImage, (canvas.width - w) / 2, (canvas.height - h) / 2, w, h);
     ctx.globalAlpha = 1;
   }
 
-  // Vignette — always applied to darken edges
+  // Strong vignette — darkens edges and dims the overall background
   const vig = ctx.createRadialGradient(
-    canvas.width / 2, canvas.height / 2, canvas.width * 0.15,
-    canvas.width / 2, canvas.height / 2, canvas.width * 0.85
+    canvas.width / 2, canvas.height / 2, canvas.width * 0.05,
+    canvas.width / 2, canvas.height / 2, canvas.width * 0.82
   );
-  vig.addColorStop(0, 'rgba(0,0,0,0)');
-  vig.addColorStop(1, 'rgba(0,0,0,0.72)');
+  vig.addColorStop(0,   'rgba(0,0,0,0.38)');
+  vig.addColorStop(0.6, 'rgba(0,0,0,0.62)');
+  vig.addColorStop(1,   'rgba(0,0,0,0.88)');
   ctx.fillStyle = vig;
   ctx.fillRect(0, 0, canvas.width, canvas.height);
+}
+
+// Dark "stage" band behind the visualizer so elements always pop
+function drawStage(ctx, canvas, baseY, stageH) {
+  const grad = ctx.createLinearGradient(0, baseY - stageH, 0, baseY + stageH * 0.5);
+  grad.addColorStop(0,   'rgba(0,0,0,0)');
+  grad.addColorStop(0.3, 'rgba(0,0,0,0.55)');
+  grad.addColorStop(0.7, 'rgba(0,0,0,0.72)');
+  grad.addColorStop(1,   'rgba(0,0,0,0)');
+  ctx.fillStyle = grad;
+  ctx.fillRect(0, baseY - stageH, canvas.width, stageH * 1.5);
 }
 
 // ── Shared helpers ─────────────────────────────────────────────
@@ -115,6 +129,8 @@ function drawBars(ctx, dataArray, bufferLength, canvas, opts) {
   const baseY   = canvas.height * 0.80;
   const maxH    = canvas.height * 0.70;
 
+  drawStage(ctx, canvas, baseY, maxH * 1.1);
+
   for (let i = 0; i < usable; i++) {
     const env     = gaussian(i, usable, 0.30);
     const rawAmp  = Math.min((dataArray[i] / 255) * (sensitivity / 100), 1);
@@ -128,11 +144,11 @@ function drawBars(ctx, dataArray, bufferLength, canvas, opts) {
     // ── Main bar with vertical gradient ──
     const grad = ctx.createLinearGradient(x, baseY - barH, x, baseY);
     grad.addColorStop(0, color);
-    grad.addColorStop(0.6, color.replace(/[\d.]+%\)/, v => `${Math.max(parseFloat(v) - 18, 10)}%)`));
+    grad.addColorStop(0.6, color.replace(/[\d.]+%\)/, v => `${Math.max(parseFloat(v) - 10, 15)}%)`));
     grad.addColorStop(1, 'rgba(0,0,0,0.05)');
 
     ctx.shadowColor = color;
-    ctx.shadowBlur  = 10 + amp * 22;
+    ctx.shadowBlur  = 18 + amp * 36;
     ctx.fillStyle   = grad;
 
     const r = Math.min(barW / 2, 3);
@@ -186,6 +202,8 @@ function drawWaveform(ctx, dataArray, bufferLength, canvas, opts) {
   const step    = Math.max(1, Math.floor(bufferLength / 180));
   const pts     = [];
 
+  drawStage(ctx, canvas, midY, canvas.height * 0.42);
+
   for (let i = 0; i < bufferLength; i += step) {
     const v = (dataArray[i] / 128) - 1;
     pts.push({ x: margin + (i / bufferLength) * drawW, y: midY + v * amp });
@@ -214,11 +232,17 @@ function drawWaveform(ctx, dataArray, bufferLength, canvas, opts) {
   ctx.beginPath();
   smoothPath(ctx, pts);
   ctx.strokeStyle = lineGrad;
-  ctx.lineWidth   = 2.5;
+  ctx.lineWidth   = 3;
   ctx.shadowColor = getColor(colorScheme, 3, 6, 1);
-  ctx.shadowBlur  = 16;
+  ctx.shadowBlur  = 28;
   ctx.lineJoin    = 'round';
   ctx.stroke();
+  // Second pass for extra brightness
+  ctx.lineWidth  = 1.2;
+  ctx.shadowBlur = 8;
+  ctx.globalAlpha = 0.7;
+  ctx.stroke();
+  ctx.globalAlpha = 1;
 
   // ── Thin secondary line (echo) ──
   ctx.globalAlpha = 0.35;
@@ -271,9 +295,9 @@ function drawCircular(ctx, dataArray, bufferLength, canvas, opts) {
     const y2 = cy + Math.sin(angle) * (innerR + spike);
 
     ctx.strokeStyle = color;
-    ctx.lineWidth   = 1.8 + amp * 1.4;
+    ctx.lineWidth   = 2.2 + amp * 1.8;
     ctx.shadowColor = color;
-    ctx.shadowBlur  = 8 + amp * 16;
+    ctx.shadowBlur  = 16 + amp * 32;
     ctx.lineCap     = 'round';
     ctx.beginPath();
     ctx.moveTo(x1, y1);
@@ -377,6 +401,8 @@ function drawMirror(ctx, dataArray, bufferLength, canvas, opts) {
   const midY    = canvas.height * 0.50;
   const maxH    = canvas.height * 0.40;
 
+  drawStage(ctx, canvas, midY, maxH * 1.15);
+
   // Center divider
   ctx.strokeStyle = 'rgba(255,255,255,0.07)';
   ctx.lineWidth   = 1;
@@ -396,7 +422,7 @@ function drawMirror(ctx, dataArray, bufferLength, canvas, opts) {
     if (barH < 1) continue;
 
     ctx.shadowColor = color;
-    ctx.shadowBlur  = 8 + amp * 16;
+    ctx.shadowBlur  = 18 + amp * 30;
 
     // Up gradient
     const gradUp = ctx.createLinearGradient(x, midY - barH, x, midY);
@@ -427,6 +453,8 @@ function drawSpectrum(ctx, dataArray, bufferLength, canvas, opts) {
   const drawW   = canvas.width - margin * 2;
   const baseY   = canvas.height;
   const maxH    = canvas.height * 0.82;
+
+  drawStage(ctx, canvas, canvas.height * 0.5, canvas.height * 0.55);
   const usable  = Math.floor(bufferLength * 0.65);
   const step    = Math.max(1, Math.floor(usable / 160));
   const pts     = [];
@@ -462,16 +490,16 @@ function drawSpectrum(ctx, dataArray, bufferLength, canvas, opts) {
     lineGrad.addColorStop(s / 8, getColor(colorScheme, s, 8, 1));
   }
   ctx.strokeStyle = lineGrad;
-  ctx.lineWidth   = 2.5;
+  ctx.lineWidth   = 3;
   ctx.lineJoin    = 'round';
   ctx.shadowColor = getColor(colorScheme, 4, 8, 1);
-  ctx.shadowBlur  = 18;
+  ctx.shadowBlur  = 30;
   ctx.stroke();
 
   // ── Second pass: brighter thin overlay ──
-  ctx.lineWidth   = 1;
-  ctx.shadowBlur  = 4;
-  ctx.globalAlpha = 0.6;
+  ctx.lineWidth   = 1.2;
+  ctx.shadowBlur  = 8;
+  ctx.globalAlpha = 0.75;
   ctx.stroke();
 
   ctx.globalAlpha = 1;
@@ -494,6 +522,8 @@ function drawGlow3D(ctx, dataArray, bufferLength, canvas, opts) {
   const barW    = slot * 0.78;
   const baseY   = canvas.height * 0.76;
   const maxH    = canvas.height * 0.68;
+
+  drawStage(ctx, canvas, baseY, maxH * 1.05);
 
   // Apply perspective shear — makes bars look like they're on a tilted plane
   ctx.save();
@@ -523,7 +553,7 @@ function drawGlow3D(ctx, dataArray, bufferLength, canvas, opts) {
     if (barH < 2) continue;
 
     // Strong glow increases near center
-    const glowStr = 14 + amp * 30 + env * 18;
+    const glowStr = 22 + amp * 45 + env * 28;
     ctx.shadowColor = color;
     ctx.shadowBlur  = glowStr;
 
