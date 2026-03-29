@@ -516,6 +516,108 @@ input[type="range"]::-moz-range-thumb {
 
 .download-timer { font-size: 0.8rem; color: var(--text-muted); font-weight: 600; }
 
+/* ── Save modal (post-export) ─────────────────────────────────── */
+.save-modal-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0,0,0,0.75);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 200;
+  padding: 20px;
+  animation: fadeIn 0.18s ease;
+}
+
+@keyframes fadeIn {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
+
+.save-modal {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 18px;
+  padding: 28px 28px 20px;
+  text-align: center;
+  width: 100%;
+  max-width: 340px;
+  animation: slideUp 0.22s ease;
+}
+
+@keyframes slideUp {
+  from { transform: translateY(16px); opacity: 0; }
+  to   { transform: translateY(0);    opacity: 1; }
+}
+
+.save-modal-icon {
+  width: 52px;
+  height: 52px;
+  border-radius: 50%;
+  background: rgba(108,99,255,0.15);
+  border: 1.5px solid var(--accent);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin: 0 auto 14px;
+}
+
+.save-modal-icon svg {
+  width: 26px;
+  height: 26px;
+  stroke: var(--accent);
+}
+
+.save-modal h3 {
+  font-size: 1.05rem;
+  font-weight: 700;
+  margin-bottom: 6px;
+}
+
+.save-modal p {
+  font-size: 0.82rem;
+  color: var(--text-muted);
+  margin-bottom: 20px;
+  line-height: 1.5;
+}
+
+.save-modal-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-bottom: 12px;
+}
+
+.btn-camera-roll {
+  background: linear-gradient(135deg, var(--accent), #a78bfa);
+  color: white;
+  width: 100%;
+}
+
+.btn-camera-roll:hover { filter: brightness(1.12); }
+
+.btn-download-file {
+  background: var(--surface2);
+  border: 1.5px solid var(--border);
+  color: var(--text);
+  width: 100%;
+}
+
+.btn-download-file:hover { border-color: var(--accent); }
+
+.save-modal-close {
+  background: none;
+  border: none;
+  color: var(--text-muted);
+  font-size: 0.8rem;
+  cursor: pointer;
+  padding: 6px 12px;
+  border-radius: 6px;
+  transition: color var(--transition);
+}
+
+.save-modal-close:hover { color: var(--text); }
+
 /* ═══════════════════════════════════════════════════════════════
    MOBILE  ≤ 640px
    ═══════════════════════════════════════════════════════════════ */

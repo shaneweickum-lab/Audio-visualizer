@@ -450,16 +450,16 @@
         }
       );
 
-      Recorder.download(blob, `audio-visualizer.${ext}`);
-      recordStatus.textContent    = `Saved as ${ext.toUpperCase()} — check your Downloads folder`;
-      recordStatus.style.display  = 'block';
+      // Remove progress overlay first, then show save options modal
+      document.body.removeChild(overlay);
+      showSaveModal(blob, `audio-visualizer.${ext}`);
 
     } catch (err) {
       console.error('Recording error:', err);
+      document.body.removeChild(overlay);
       recordStatus.textContent   = 'Export failed: ' + (err.message || err);
       recordStatus.style.display = 'block';
     } finally {
-      document.body.removeChild(overlay);
       recordBtn.disabled = false;
       fabExport.disabled = !audioBuffer;
       recordBtn.classList.remove('recording');
@@ -482,6 +482,78 @@
         <div class="download-timer">0%</div>
       </div>`;
     return div;
+  }
+
+  // ── Save modal (shown after export) ───────────────────────────
+  function showSaveModal(blob, filename) {
+    const canShare = Recorder.canShareFiles();
+    const ext      = filename.split('.').pop().toUpperCase();
+
+    const modal = document.createElement('div');
+    modal.className = 'save-modal-overlay';
+    modal.innerHTML = `
+      <div class="save-modal">
+        <div class="save-modal-icon">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+            <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/>
+            <polyline points="22 4 12 14.01 9 11.01"/>
+          </svg>
+        </div>
+        <h3>Video Ready!</h3>
+        <p>Your ${ext} visualization is rendered and ready to save.</p>
+        <div class="save-modal-actions">
+          ${canShare ? `
+          <button class="btn btn-camera-roll" id="btnCameraRoll">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <rect x="3" y="3" width="18" height="18" rx="2"/>
+              <circle cx="8.5" cy="8.5" r="1.5" fill="currentColor" stroke="none"/>
+              <polyline points="21 15 16 10 5 21"/>
+            </svg>
+            Save to Camera Roll
+          </button>` : ''}
+          <button class="btn btn-download-file" id="btnDownloadFile">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+              <polyline points="7 10 12 15 17 10"/>
+              <line x1="12" y1="15" x2="12" y2="3"/>
+            </svg>
+            Download File
+          </button>
+        </div>
+        <button class="save-modal-close" id="btnSaveClose">Dismiss</button>
+      </div>`;
+
+    document.body.appendChild(modal);
+
+    // Camera roll — must be called from this direct tap gesture
+    if (canShare) {
+      modal.querySelector('#btnCameraRoll').addEventListener('click', async () => {
+        try {
+          await Recorder.shareFile(blob, filename);
+          // User saved (or shared) — close modal
+          document.body.removeChild(modal);
+        } catch (err) {
+          if (err.name === 'AbortError') return; // user cancelled share sheet — keep modal open
+          // Share unexpectedly failed — fall back to download
+          Recorder.download(blob, filename);
+          document.body.removeChild(modal);
+        }
+      });
+    }
+
+    modal.querySelector('#btnDownloadFile').addEventListener('click', () => {
+      Recorder.download(blob, filename);
+      document.body.removeChild(modal);
+    });
+
+    modal.querySelector('#btnSaveClose').addEventListener('click', () => {
+      document.body.removeChild(modal);
+    });
+
+    // Tap backdrop to dismiss
+    modal.addEventListener('click', e => {
+      if (e.target === modal) document.body.removeChild(modal);
+    });
   }
 
   // ── Error toast ────────────────────────────────────────────────

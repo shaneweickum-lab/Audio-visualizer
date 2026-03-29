@@ -148,5 +148,24 @@ window.Recorder = (function () {
     }, 1000);
   }
 
-  return { record, download, getSupportedMimeType };
+  /** Returns true if the browser supports sharing video files (iOS/Android) */
+  function canShareFiles() {
+    if (!navigator.share || !navigator.canShare) return false;
+    try {
+      return navigator.canShare({ files: [new File([''], 'test.mp4', { type: 'video/mp4' })] });
+    } catch (_) {
+      return false;
+    }
+  }
+
+  /**
+   * Share a file via the native OS share sheet (must be called from a direct user gesture).
+   * On iOS this shows "Save Video" → Camera Roll. On Android shows gallery/share options.
+   */
+  async function shareFile(blob, filename) {
+    const file = new File([blob], filename, { type: blob.type });
+    await navigator.share({ files: [file], title: 'Audio Visualizer' });
+  }
+
+  return { record, download, canShareFiles, shareFile, getSupportedMimeType };
 })();
